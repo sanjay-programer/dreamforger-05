@@ -25,6 +25,8 @@ interface ActivatedSkill {
   name: string;
   status: 'ongoing' | 'completed';
   progress: number;
+  roadmap?: any[];
+  tasks?: any[];
 }
 
 const Dashboard = () => {
@@ -35,98 +37,131 @@ const Dashboard = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const fetchUserDetails = async () => {
-      try {
-        const response = await fetch('http://127.0.0.1:8000/user/details', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            user_id: userId
-          }),
-        });
+  const fetchUserDetails = async () => {
+    try {
+      const response = await fetch('http://127.0.0.1:8000/user/details', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: userId
+        }),
+      });
 
-        const data = await response.json();
-        if (data.success) {
-          setUserDetails(data.data);
-          return data.data.dream;
-        }
-        return null;
-      } catch (error) {
-        console.error('Error fetching user details:', error);
-        return null;
+      const data = await response.json();
+      if (data.success) {
+        setUserDetails(data.data);
+        return data.data.dream;
       }
-    };
+      return null;
+    } catch (error) {
+      console.error('Error fetching user details:', error);
+      return null;
+    }
+  };
 
-    const fetchUserProgress = async () => {
-      try {
-        const response = await fetch('http://127.0.0.1:8000/get_user_progress', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ user_id: userId }),
-        });
+  const fetchUserProgress = async () => {
+    try {
+      console.log('Starting fetchUserProgress for user:', userId);
+      
+      const response = await fetch('http://127.0.0.1:8000/get_user_progress', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ user_id: userId }),
+      });
 
-        const data = await response.json();
-        if (data.success && data.data.activated_skills) {
-          const skillsArray = Object.entries(data.data.activated_skills).map(([name, status]) => ({
+      const data = await response.json();
+      console.log('Raw response from get_user_progress:', data);
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to fetch user progress');
+      }
+
+      if (!data.data) {
+        console.log('No data object in response');
+        return;
+      }
+
+      // Process activated skills
+      if (data.data.activated_skills) {
+        console.log('Found activated skills:', data.data.activated_skills);
+        
+        const skillsArray = Object.entries(data.data.activated_skills).map(([name, status]) => {
+          const skill: ActivatedSkill = {
             name,
             status: status as 'ongoing' | 'completed',
-            progress: 0 // You can calculate this based on completed stages
-          }));
-          setActivatedSkills(skillsArray);
-        }
-      } catch (error) {
-        console.error('Error fetching user progress:', error);
-      }
-    };
+            progress: 0,
+            roadmap: data.data.developing_skills?.[name] || [],
+            tasks: []
+          };
 
-    const fetchSkills = async () => {
-      try {
-        const dream = await fetchUserDetails();
-        if (!dream) {
-          toast({
-            title: "No Dream Set",
-            description: "Please set your dream in the dream selection page",
-            variant: "destructive",
-          });
-          return;
-        }
+          // Process tasks if they exist
+          if (data.data.ongoing_tasks && data.data.ongoing_tasks[name]) {
+            const allTasks = Object.values(data.data.ongoing_tasks[name]).flat();
+            skill.tasks = allTasks;
+          }
 
-        const response = await fetch('http://127.0.0.1:8000/generate-skills', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ dream }),
+          return skill;
         });
 
-        const data = await response.json();
+        console.log('Processed skills array:', skillsArray);
+        setActivatedSkills(skillsArray);
+      } else {
+        console.log('No activated skills found');
+        setActivatedSkills([]);
+      }
+    } catch (error) {
+      console.error('Error in fetchUserProgress:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch user progress",
+        variant: "destructive",
+      });
+    }
+  };
 
-        if (data.response && data.response.skills) {
-          setSkills(data.response.skills);
-        } else {
-          toast({
-            title: "Error",
-            description: "Failed to fetch skills",
-            variant: "destructive",
-          });
-        }
-      } catch (error) {
+  const fetchSkills = async () => {
+    try {
+      const dream = await fetchUserDetails();
+      if (!dream) {
+        toast({
+          title: "No Dream Set",
+          description: "Please set your dream in the dream selection page",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const response = await fetch('http://127.0.0.1:8000/generate-skills', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ dream }),
+      });
+
+      const data = await response.json();
+
+      if (data.response && data.response.skills) {
+        setSkills(data.response.skills);
+      } else {
         toast({
           title: "Error",
-          description: "An error occurred while fetching skills",
+          description: "Failed to fetch skills",
           variant: "destructive",
         });
       }
-    };
-
-    fetchSkills();
-    fetchUserProgress();
-  }, [userId, toast]);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "An error occurred while fetching skills",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleActivateSkill = async (skill: Skill) => {
     try {
@@ -222,6 +257,23 @@ const Dashboard = () => {
     }
   };
 
+  useEffect(() => {
+    const initializeDashboard = async () => {
+      console.log('Initializing dashboard...');
+      await fetchUserDetails();
+      await fetchUserProgress();
+      await fetchSkills();
+      console.log('Dashboard initialized. Activated skills:', activatedSkills);
+    };
+
+    initializeDashboard();
+  }, [userId, toast]);
+
+  // Add effect to log when activatedSkills changes
+  useEffect(() => {
+    console.log('Activated skills updated:', activatedSkills);
+  }, [activatedSkills]);
+
   // Sample data
   const stats = [
     { label: "Learning Streaks", value: "12 days", icon: Activity, color: "neon-cyan" },
@@ -268,10 +320,10 @@ const Dashboard = () => {
           ))}
         </div>
 
-        {/* Activated Skills Section */}
-        {activatedSkills.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-4xl font-bold neon-text-green mb-6">Your Active Skills</h2>
+        {/* Activated Skills Section - Always visible */}
+        <div className="mb-8">
+          <h2 className="text-4xl font-bold neon-text-green mb-6">Your Active Skills</h2>
+          {activatedSkills.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {activatedSkills.map((skill) => (
                 <div key={skill.name} className="glassmorphism p-6 rounded-lg hover:border-neon-green transition-all duration-300 group">
@@ -300,8 +352,18 @@ const Dashboard = () => {
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="glassmorphism p-8 rounded-lg text-center">
+              <div className="w-20 h-20 mx-auto bg-neon-cyan/20 rounded-full flex items-center justify-center mb-6">
+                <Zap className="w-10 h-10 text-neon-cyan" />
+              </div>
+              <h3 className="text-2xl font-bold mb-4">No Active Skills Yet</h3>
+              <p className="text-xl text-gray-300 mb-6">
+                Activate a skill from the Divine Skills section below to start your learning journey!
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Divine Skills Section */}
         <div className="mb-8">
