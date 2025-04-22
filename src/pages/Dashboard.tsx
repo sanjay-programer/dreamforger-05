@@ -80,46 +80,40 @@ const Dashboard = () => {
         throw new Error(data.detail || 'Failed to fetch user progress');
       }
 
+      // Initialize with empty array if no data
       if (!data.data) {
-        console.log('No data object in response');
+        console.log('No data object in response, initializing with empty array');
+        setActivatedSkills([]);
         return;
       }
 
-      // Process activated skills
-      if (data.data.activated_skills) {
-        console.log('Found activated skills:', data.data.activated_skills);
-        
-        const skillsArray = Object.entries(data.data.activated_skills).map(([name, status]) => {
-          const skill: ActivatedSkill = {
-            name,
-            status: status as 'ongoing' | 'completed',
-            progress: 0,
-            roadmap: data.data.developing_skills?.[name] || [],
-            tasks: []
-          };
+      // Process activated skills if they exist
+      const skillsArray = data.data.activated_skills 
+        ? Object.entries(data.data.activated_skills).map(([name, status]) => {
+            const skill: ActivatedSkill = {
+              name,
+              status: status as 'ongoing' | 'completed',
+              progress: 0,
+              roadmap: data.data.developing_skills?.[name] || [],
+              tasks: []
+            };
 
-          // Process tasks if they exist
-          if (data.data.ongoing_tasks && data.data.ongoing_tasks[name]) {
-            const allTasks = Object.values(data.data.ongoing_tasks[name]).flat();
-            skill.tasks = allTasks;
-          }
+            // Process tasks if they exist
+            if (data.data.ongoing_tasks && data.data.ongoing_tasks[name]) {
+              const allTasks = Object.values(data.data.ongoing_tasks[name]).flat();
+              skill.tasks = allTasks;
+            }
 
-          return skill;
-        });
+            return skill;
+          })
+        : [];
 
-        console.log('Processed skills array:', skillsArray);
-        setActivatedSkills(skillsArray);
-      } else {
-        console.log('No activated skills found');
-        setActivatedSkills([]);
-      }
+      console.log('Processed skills array:', skillsArray);
+      setActivatedSkills(skillsArray);
     } catch (error) {
       console.error('Error in fetchUserProgress:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch user progress",
-        variant: "destructive",
-      });
+      // Instead of showing an error toast, just set empty array
+      setActivatedSkills([]);
     }
   };
 
